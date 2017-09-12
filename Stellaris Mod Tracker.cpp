@@ -25,11 +25,11 @@ bool recordModIDs = true;
 void recordMods(wstring newFile) {
 	if (newFile.find(L".sav") != string::npos && (newFile.find(L"autosave") == string::npos || !skipAutoSaves)) {
 		
-		wstring outPath = newFile.substr(0, newFile.find_last_of(L"\\")) + L"\\modlist.txt";
+		wstring outPath = newFile.substr(0, newFile.find_last_of(L"\\")) + L"\\modlist.txt";	
 		wifstream inFile;
 		wofstream outFile;
 		wstring lineIn;
-		vector<wstring> modIdList;
+		vector<wstring> modIDList;
 
 		inFile.open(localPath + L"\\settings.txt", ifstream::in);
 		outFile.open(outPath, ofstream::app);
@@ -42,19 +42,22 @@ void recordMods(wstring newFile) {
 						outFile.flush();
 					}
 					lineIn = lineIn.substr(lineIn.find(L"_") + 1, lineIn.find(L".") - lineIn.find(L"_") - 1);
-					modIdList.push_back(lineIn);
+					modIDList.push_back(lineIn);
 				}
 			}
+			//Blank lines between mod IDs and mod names, if mod IDs are enabled
 			if (recordModIDs){
 				outFile << L"\n\n";
 			}
 			
 			inFile.close();
 			vector<wstring> modNameList;
-
+			
+			//Go through modIDList and open each corresponding .mod file, then read the first line (which contains the mod name),
+			//	and keep track of the length of the longest mod name.
 			unsigned int longestModName = 0;
-			for (unsigned int i = 0; i < modIdList.size(); ++i) {
-				inFile.open(localPath + L"\\mod\\ugc_" + modIdList[i] + L".mod", ifstream::in);
+			for (unsigned int i = 0; i < modIDList.size(); ++i) {
+				inFile.open(localPath + L"\\mod\\ugc_" + modIDList[i] + L".mod", ifstream::in);
 				if (inFile.is_open()) {
 					getline(inFile, lineIn);
 					lineIn = lineIn.substr(lineIn.find(L"\"") + 1, lineIn.find_last_of(L"\"") - lineIn.find(L"\"") - 1);
@@ -64,11 +67,12 @@ void recordMods(wstring newFile) {
 					modNameList.push_back(lineIn);
 					inFile.close();
 				}
+				else wcout << L"Could not open \\mod\\ugc_" << modIDList[i] << L".mod." << '\n';
 			}
 			
 			for (unsigned int i = 0; i < modNameList.size(); ++i) {
 				wstring pad(longestModName - modNameList[i].length() + 5, '.');
-				modNameList[i] += (pad + _MODURL + modIdList[i]);
+				modNameList[i] += (pad + _MODURL + modIDList[i]);
 			}
 
 			sort(modNameList.begin(), modNameList.end());
@@ -81,6 +85,7 @@ void recordMods(wstring newFile) {
 			outFile.flush();
 			outFile.close();
 		}
+		else wcout << L"Could not open settings.txt. Please check that the paths entered in the .ini are correct" << '\n';
 	}
 }
 
@@ -98,7 +103,7 @@ int checkForNewFiles(wchar_t * Dir) {
 
 		ReadDirectoryChangesW(DirectoryHandle, NotifyInformation, sizeof(FILE_NOTIFY_INFORMATION) * 1024, TRUE, FileNotifyAttributes, &BytesReturned, &Overlapped, NULL);
 		GetOverlappedResult(DirectoryHandle, &Overlapped, &BytesReturned, FALSE);
-
+		
 		if (NotifyInformation[0].Action == FILE_ACTION_ADDED) {
 				wstring newFile(Dir);
 				newFile += L"\\";
@@ -115,27 +120,35 @@ int main() {
     wchar_t cloud[256];
     wchar_t local[256];
 	wchar_t settings[256];
-
-    GetPrivateProfileStringW(L"Paths", L"LocalPath", L"", local, 256, L".\\ModTrackerConfig.ini");
-    GetPrivateProfileStringW(L"Paths", L"CloudPath", L"", cloud, 256, L".\\ModTrackerConfig.ini");
-	GetPrivateProfileStringW(L"Settings", L"Ignore Autosaves", L"true", settings, 256, L".\\ModTrackerConfig.ini");
-	wstring temp = settings;
+	wstring temp;
 	
-	if (temp.find(L"true") != string:: npos)	skipAutoSaves = true;
-	else	skipAutoSaves = false;
-	
-	ZeroMemory(settings, 256);
-	GetPrivateProfileStringW(L"Settings", L"Record Mod IDs", L"true", settings, 256, L".\\ModTrackerConfig.ini");
-	temp = settings;
-	
-	if (temp.find(L"true") != string:: npos)	recordModIDs = true;
-	else	recordModIDs = false;
-	
-    localPath = local;
+	//Read save gave paths from .ini
+	GetPrivateProfileStringW(L"Paths", L"LocalPath", L"", local, 256, L".\\Stellaris Mod Tracker Config.ini");
+    GetPrivateProfileStringW(L"Paths", L"CloudPath", L"", cloud, 256, L".\\Stellaris Mod Tracker Config.ini");
+	localPath = local;
     localPath = localPath.substr(0, localPath.find_last_of(L"\\"));
     cloudPath = cloud;
 	
-    //ShowWindow(GetConsoleWindow(), SW_HIDE);
+	//Read autosave setting from .ini
+	GetPrivateProfileStringW(L"Settings", L"Ignore Autosaves", L"true", settings, 256, L".\\Stellaris Mod Tracker Config.ini");
+	temp = settings;
+	if (temp.find(L"true") != string:: npos)	skipAutoSaves = true;
+	else 	skipAutoSaves = false;
+	ZeroMemory(settings, 256);
+	
+	//Read mod ID setting from .ini
+	GetPrivateProfileStringW(L"Settings", L"Record Mod IDs", L"true", settings, 256, L".\\Stellaris Mod Tracker Config.ini");
+	temp = settings;
+	if (temp.find(L"true") != string:: npos)	recordModIDs = true;
+	else 	recordModIDs = false;
+	ZeroMemory(settings, 256);
+	
+	//Read minimize setting from .ini and minimize appropirately
+	GetPrivateProfileStringW(L"Settings", L"Minimize to Background", L"true", settings, 256, L".\\Stellaris Mod Tracker Config.ini");
+	temp = settings;
+	if (temp.find(L"true") != string:: npos)	ShowWindow(GetConsoleWindow(), SW_HIDE);
+	
+	//Start watching both directories 
 	thread checkCloud(checkForNewFiles, cloud);
     checkForNewFiles(local);
     return 0;
