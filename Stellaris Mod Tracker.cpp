@@ -1,8 +1,8 @@
 //Stellaris Mod Tracker
 //#include "stdafx.h"
- 
+
 #define _MODURL       (L"http://steamcommunity.com/sharedfiles/filedetails/?id=")
- 
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -13,19 +13,20 @@
 #include <windows.h>
 #include <tchar.h>
 #include <thread>
- 
+
 using namespace std;
- 
- 
+
+
 wstring cloudPath;
 wstring localPath;
 bool skipAutoSaves = true;
-bool recordModIDs = true;
+bool recordModIDs = false;
+bool STML = true;
 
-void recordMods(wstring newFile) {
+void recordTXT(wstring newFile) {
 	if (newFile.find(L".sav") != string::npos && (newFile.find(L"autosave") == string::npos || !skipAutoSaves)) {
-		
-		wstring outPath = newFile.substr(0, newFile.find_last_of(L"\\")) + L"\\modlist.txt";	
+
+		wstring outPath = newFile.substr(0, newFile.find_last_of(L"\\")) + L"\\modlist.txt";
 		wifstream inFile;
 		wofstream outFile;
 		wstring lineIn;
@@ -37,7 +38,7 @@ void recordMods(wstring newFile) {
 			outFile << newFile.substr(newFile.find_last_of(L"\\") + 1, newFile.length() - newFile.find_last_of(L"\\")) << L"\n\n";
 			while (getline(inFile, lineIn)) {
 				if (lineIn.find(L"\"mod") != string::npos) {
-					if (recordModIDs){
+					if (recordModIDs) {
 						outFile << lineIn << '\n';
 						outFile.flush();
 					}
@@ -46,13 +47,13 @@ void recordMods(wstring newFile) {
 				}
 			}
 			//Blank lines between mod IDs and mod names, if mod IDs are enabled
-			if (recordModIDs){
+			if (recordModIDs) {
 				outFile << L"\n\n";
 			}
-			
+
 			inFile.close();
 			vector<wstring> modNameList;
-			
+
 			//Go through modIDList and open each corresponding .mod file, then read the first line (which contains the mod name),
 			//	and keep track of the length of the longest mod name.
 			unsigned int longestModName = 0;
@@ -61,7 +62,7 @@ void recordMods(wstring newFile) {
 				if (inFile.is_open()) {
 					getline(inFile, lineIn);
 					lineIn = lineIn.substr(lineIn.find(L"\"") + 1, lineIn.find_last_of(L"\"") - lineIn.find(L"\"") - 1);
-					if (lineIn.length() > longestModName){
+					if (lineIn.length() > longestModName) {
 						longestModName = lineIn.length();
 					}
 					modNameList.push_back(lineIn);
@@ -69,7 +70,7 @@ void recordMods(wstring newFile) {
 				}
 				else wcout << L"Could not open \\mod\\ugc_" << modIDList[i] << L".mod." << '\n';
 			}
-			
+
 			for (unsigned int i = 0; i < modNameList.size(); ++i) {
 				wstring pad(longestModName - modNameList[i].length() + 5, '.');
 				modNameList[i] += (pad + _MODURL + modIDList[i]);
@@ -89,6 +90,31 @@ void recordMods(wstring newFile) {
 	}
 }
 
+void recordSTML(wstring newFile) {
+	if (newFile.find(L".sav") != string::npos && (newFile.find(L"autosave") == string::npos || !skipAutoSaves)) {
+
+		wstring outPath = newFile.substr(0, newFile.find(L".sav")) + L".stml";
+		wifstream inFile;
+		wofstream outFile;
+		wstring lineIn;
+
+		inFile.open(localPath + L"\\settings.txt", ifstream::in);
+		outFile.open(outPath, ofstream::trunc);
+		if (inFile.is_open()) {
+			while (getline(inFile, lineIn)) {
+				if (lineIn.find(L"\"mod") != string::npos) {
+					if (recordModIDs) {
+						lineIn = lineIn.substr(lineIn.find(L"\"") + 1, lineIn.find_last_of(L"\"") - lineIn.find(L"\"") - 1);
+						outFile << lineIn << '\n';
+						outFile.flush();
+					}
+				}
+			}
+		}
+		else wcout << L"Could not open settings.txt. Please check that the paths entered in the .ini are correct" << '\n';
+	}
+}
+
 int checkForNewFiles(wchar_t * Dir) {
 	HANDLE DirectoryHandle = CreateFileW(Dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 	OVERLAPPED Overlapped = {};
@@ -103,12 +129,14 @@ int checkForNewFiles(wchar_t * Dir) {
 
 		ReadDirectoryChangesW(DirectoryHandle, NotifyInformation, sizeof(FILE_NOTIFY_INFORMATION) * 1024, TRUE, FileNotifyAttributes, &BytesReturned, &Overlapped, NULL);
 		GetOverlappedResult(DirectoryHandle, &Overlapped, &BytesReturned, FALSE);
-		
+
 		if (NotifyInformation[0].Action == FILE_ACTION_ADDED) {
-				wstring newFile(Dir);
-				newFile += L"\\";
-				newFile += NotifyInformation[0].FileName;
-				recordMods(newFile);
+			wstring newFile(Dir);
+			newFile += L"\\";
+			newFile += NotifyInformation[0].FileName;
+			wcout << newFile;
+			if (STML)	recordSTML(newFile);
+			else 		recordTXT(newFile);
 		}
 		Sleep(100);
 	}
@@ -116,40 +144,85 @@ int checkForNewFiles(wchar_t * Dir) {
 }
 
 int main() {
- 
-    wchar_t cloud[256];
-    wchar_t local[256];
+
+	wchar_t cloud[256];
+	wchar_t local[256];
 	wchar_t settings[256];
 	wstring temp;
+	/*
+	localPath = L"C:\\Users\Michael\\Documents\\Paradox Interactive\\Stellaris";
+	cloudPath = L"C:\\Program Files (x86)\\Steam\\userdata\\107065715\\281990\\remote\\save games";
+	thread checkCloud(checkForNewFiles, cloud);
+	checkForNewFiles(local);
+	wcout << cloud << '\n' << local << '\n' << cloudPath << '\n' << localPath << '\n';
+	*/
 	
 	//Read save gave paths from .ini
-	GetPrivateProfileStringW(L"Paths", L"LocalPath", L"", local, 256, L".\\Stellaris Mod Tracker Config.ini");
-    GetPrivateProfileStringW(L"Paths", L"CloudPath", L"", cloud, 256, L".\\Stellaris Mod Tracker Config.ini");
+	GetPrivateProfileStringW(L"Paths", L"LocalPath", L"", local, 256, L".\\ModTrackerConfig.ini");
+	GetPrivateProfileStringW(L"Paths", L"CloudPath", L"", cloud, 256, L".\\ModTrackerConfig.ini");
+	wcout << local;
+	wcout << cloud;
 	localPath = local;
-    localPath = localPath.substr(0, localPath.find_last_of(L"\\"));
-    cloudPath = cloud;
-	
+	localPath = localPath.substr(0, localPath.find_last_of(L"\\"));
+	cloudPath = cloud;
+
 	//Read autosave setting from .ini
-	GetPrivateProfileStringW(L"Settings", L"Ignore Autosaves", L"true", settings, 256, L".\\Stellaris Mod Tracker Config.ini");
+	GetPrivateProfileStringW(L"Settings", L"Ignore Autosaves", L"true", settings, 256, L".\\ModTrackerConfig.ini");
 	temp = settings;
-	if (temp.find(L"true") != string:: npos)	skipAutoSaves = true;
-	else 	skipAutoSaves = false;
+	wcout << temp;
+	if (temp.find(L"true") != string::npos)
+		skipAutoSaves = true;
+	else
+		skipAutoSaves = false;
 	ZeroMemory(settings, 256);
-	
+
 	//Read mod ID setting from .ini
-	GetPrivateProfileStringW(L"Settings", L"Record Mod IDs", L"true", settings, 256, L".\\Stellaris Mod Tracker Config.ini");
+	GetPrivateProfileStringW(L"Settings", L"Record Mod IDs", L"true", settings, 256, L".\\ModTrackerConfig.ini");
 	temp = settings;
-	if (temp.find(L"true") != string:: npos)	recordModIDs = true;
-	else 	recordModIDs = false;
+	wcout << temp;
+	if (temp.find(L"true") != string::npos)
+		recordModIDs = true;
+	else
+		recordModIDs = false;
 	ZeroMemory(settings, 256);
-	
-	//Read minimize setting from .ini and minimize appropirately
-	GetPrivateProfileStringW(L"Settings", L"Minimize to Background", L"true", settings, 256, L".\\Stellaris Mod Tracker Config.ini");
+
+	//Read file format setting from .ini
+	GetPrivateProfileStringW(L"Settings", L"File Format", L"TXT", settings, 256, L".\\ModTrackerConfig.ini");
 	temp = settings;
-	if (temp.find(L"true") != string:: npos)	ShowWindow(GetConsoleWindow(), SW_HIDE);
+	wcout << temp;
+	if (temp.find(L"STML") != string::npos)
+		STML = true;
+	else
+		STML = false;
+	ZeroMemory(settings, 256);
+
 	
-	//Start watching both directories 
-	thread checkCloud(checkForNewFiles, cloud);
-    checkForNewFiles(local);
-    return 0;
+	//Read minimize setting from .ini and minimize if appropriate
+	GetPrivateProfileStringW(L"Settings", L"Minimize", L"false", settings, 256, L".\\ModTrackerConfig.ini");
+	temp = settings;
+	wcout << temp;
+	if (temp.find(L"true") != string::npos) {
+		ShowWindow(GetConsoleWindow(), SW_HIDE);
+		//thread checkCloud(checkForNewFiles, cloud);
+		HANDLE thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)checkForNewFiles, cloud, 0, 0);
+		checkForNewFiles(local); //If window is hidden, local file watcher is on main thread because obviously user cannot make any input	
+		WaitForSingleObject(thread, INFINITE);
+	}
+	else {
+		//thread checkCloud(checkForNewFiles, cloud);
+		//thread checkLocal(checkForNewFiles, local);
+		//Watch-for-and-parse user input function goes here
+
+		HANDLE threads[2];
+		threads[0] = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)checkForNewFiles, cloud, 0, 0);
+		threads[1] = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)checkForNewFiles, local, 0, 0);
+
+		DWORD waitResult = WaitForMultipleObjects(2, threads, TRUE, INFINITE);
+
+		if (waitResult == WAIT_FAILED) {
+			printf("wait failed: %d\n", GetLastError());
+		}
+	}
+
+	return 0;
 }
