@@ -1,7 +1,7 @@
 //Stellaris Mod Tracker
 //#include "stdafx.h"
 
-#define _MODURL       (L"http://steamcommunity.com/sharedfiles/filedetails/?id=")
+#define _STEAMURL       (L"http://steamcommunity.com/sharedfiles/filedetails/?id=")
 
 #include <iostream>
 #include <fstream>
@@ -13,6 +13,7 @@
 #include <windows.h>
 #include <tchar.h>
 #include <thread>
+#include <filesystem>
 
 using namespace std;
 
@@ -22,6 +23,7 @@ wstring localPath;
 bool skipAutoSaves = true;
 bool recordModIDs = false;
 bool STML = true;
+
 
 void recordTXT(wstring newFile) {
 	if (newFile.find(L".sav") != string::npos && (newFile.find(L"autosave") == string::npos || !skipAutoSaves)) {
@@ -73,7 +75,7 @@ void recordTXT(wstring newFile) {
 
 			for (unsigned int i = 0; i < modNameList.size(); ++i) {
 				wstring pad(longestModName - modNameList[i].length() + 5, '.');
-				modNameList[i] += (pad + _MODURL + modIDList[i]);
+				modNameList[i] += (pad + _STEAMURL + modIDList[i]);
 			}
 
 			sort(modNameList.begin(), modNameList.end());
@@ -90,6 +92,7 @@ void recordTXT(wstring newFile) {
 	}
 }
 
+
 void recordSTML(wstring newFile) {
 	if (newFile.find(L".sav") != string::npos && (newFile.find(L"autosave") == string::npos || !skipAutoSaves)) {
 
@@ -103,17 +106,16 @@ void recordSTML(wstring newFile) {
 		if (inFile.is_open()) {
 			while (getline(inFile, lineIn)) {
 				if (lineIn.find(L"\"mod") != string::npos) {
-					if (recordModIDs) {
 						lineIn = lineIn.substr(lineIn.find(L"\"") + 1, lineIn.find_last_of(L"\"") - lineIn.find(L"\"") - 1);
 						outFile << lineIn << '\n';
 						outFile.flush();
-					}
 				}
 			}
 		}
 		else wcout << L"Could not open settings.txt. Please check that the paths entered in the .ini are correct" << '\n';
 	}
 }
+
 
 int checkForNewFiles(wchar_t * Dir) {
 	HANDLE DirectoryHandle = CreateFileW(Dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
@@ -143,19 +145,83 @@ int checkForNewFiles(wchar_t * Dir) {
 	return 0;
 }
 
+int openWorkshop(bool onlyOpenMissingMods){
+	wifstream inFile;
+	wstring lineIn;
+	vector<wstring> modIDList;
+	wstring modURL;
+	
+	inFile.open(localPath + L"\\settings.txt", ifstream::in);
+		if (inFile.is_open()) {
+			while (getline(inFile, lineIn)) {
+				if (lineIn.find(L"\"mod") != string::npos) {
+					lineIn = lineIn.substr(lineIn.find(L"_") + 1, lineIn.find(L".") - lineIn.find(L"_") - 1);
+					modIDList.push_back(lineIn);
+				}
+			}
+			inFile.close();
+			for (int i = 0; i < modIDList.size(); ++i){
+				if (onlyOpenMissingMods){
+					inFile.open(localPath + L"\\mod\\ugc_" + modIDList[i] + L".mod");
+					if (!inFile){
+						wcout << L"Could not find mod " << modIDList[i] << L'\n';
+						modURL = _STEAMURL + modIDList[i];
+					}
+				}
+				else{
+					modURL = _STEAMURL + modIDList[i];
+				}
+				HINSTANCE result = ShellExecuteW(NULL, NULL, modURL.c_str(), NULL, NULL, SW_SHOWNORMAL);	
+			}
+}
+
+
+
+int getAndParseInput(){
+	wstring input;
+	vector<wstring> args;
+	while(true){
+		wcin >> input;
+		transform(input.begin(), input.end(), input.begin(), towlower);
+		int posA = 0;
+		int posB = 0;
+		while (true){
+			posB = input.find(L" ", posA+1);
+			if (posB == string::npos){
+				args.push_back(input.substr(posA, input.length()-posA));
+				break;
+			}
+			else{
+				args.push_back(input.substr(posA, posB-posA));
+				posA = posB;
+			}
+		}
+		if (args[0].find(L"getmods") != string::npos){
+			
+		}
+		else if (args[0].find(L"exit") != string::npos){
+			
+		}
+		else if (args[0].find(L"help") != string::npos){
+			
+		}
+		else if (args[0].find(L"exit") != string::npos){
+			
+		}
+		else {
+			wcout << L"Unknown command \"" << args[0] << "\". Enter \"help\" to see a list of commands";
+		}
+				
+	}
+}	
+
+
 int main() {
 
 	wchar_t cloud[256];
 	wchar_t local[256];
 	wchar_t settings[256];
 	wstring temp;
-	/*
-	localPath = L"C:\\Users\Michael\\Documents\\Paradox Interactive\\Stellaris";
-	cloudPath = L"C:\\Program Files (x86)\\Steam\\userdata\\107065715\\281990\\remote\\save games";
-	thread checkCloud(checkForNewFiles, cloud);
-	checkForNewFiles(local);
-	wcout << cloud << '\n' << local << '\n' << cloudPath << '\n' << localPath << '\n';
-	*/
 	
 	//Read save gave paths from .ini
 	GetPrivateProfileStringW(L"Paths", L"LocalPath", L"", local, 256, L".\\ModTrackerConfig.ini");
@@ -203,25 +269,16 @@ int main() {
 	wcout << temp;
 	if (temp.find(L"true") != string::npos) {
 		ShowWindow(GetConsoleWindow(), SW_HIDE);
-		//thread checkCloud(checkForNewFiles, cloud);
-		HANDLE thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)checkForNewFiles, cloud, 0, 0);
-		checkForNewFiles(local); //If window is hidden, local file watcher is on main thread because obviously user cannot make any input	
-		WaitForSingleObject(thread, INFINITE);
+		HANDLE thread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)checkForNewFiles, cloud, 0, 0); //Start second thread to watch for cloud saves
+		checkForNewFiles(local); //If window is hidden, local file watcher is on main thread because obviously user cannot make any input
+		WaitForSingleObject(thread, INFINITE); 
 	}
 	else {
-		//thread checkCloud(checkForNewFiles, cloud);
-		//thread checkLocal(checkForNewFiles, local);
-		//Watch-for-and-parse user input function goes here
-
 		HANDLE threads[2];
 		threads[0] = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)checkForNewFiles, cloud, 0, 0);
 		threads[1] = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)checkForNewFiles, local, 0, 0);
-
-		DWORD waitResult = WaitForMultipleObjects(2, threads, TRUE, INFINITE);
-
-		if (waitResult == WAIT_FAILED) {
-			printf("wait failed: %d\n", GetLastError());
-		}
+		getAndParseInput();
+		//DWORD waitResult = WaitForMultipleObjects(2, threads, TRUE, INFINITE);
 	}
 
 	return 0;
